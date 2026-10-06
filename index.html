@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17161b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>html{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}</style>
+<title>Doll Face Compare</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a one-screen tool. Slim header, a 4:5 viewing stage that takes every spare pixel,
+   and one row of thumb-reach switches at the bottom. A is always blue, B is always rose. */
+:root{
+  --bg:#ececf0; --surface:#f9f9fb; --ink:#1b1a21; --muted:#5f5d6b; --line:#cfced8;
+  --stage:#24232a; --a:#2c50cf; --b:#c92a66; --on-accent:#ffffff;
+  --display:"Bricolage Grotesque","Avenir Next","Segoe UI",system-ui,sans-serif;
+  --body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#17161b; --surface:#22212a; --ink:#efeef3; --muted:#a6a4b1; --line:#3b3945;
+    --stage:#0e0d11; --a:#86a1ff; --b:#ff7fac; --on-accent:#14131a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#17161b; --surface:#22212a; --ink:#efeef3; --muted:#a6a4b1; --line:#3b3945;
+  --stage:#0e0d11; --a:#86a1ff; --b:#ff7fac; --on-accent:#14131a; color-scheme:dark;
+}
+html{height:100%;box-sizing:border-box}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.45 var(--body);
+  -webkit-text-size-adjust:100%;overscroll-behavior:none}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+.app{height:100%;display:flex;flex-direction:column;max-width:720px;margin:0 auto;padding-inline:16px}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;flex:none}
+.bar h1{font:700 18px/1 var(--display);letter-spacing:-.01em;margin:0}
+
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;
+  font-weight:600;cursor:pointer;min-height:44px;touch-action:manipulation}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.small{min-height:36px;padding:6px 12px;font-size:14px}
+.link{border:0;background:none;padding:6px 0;font-weight:600;text-decoration:underline;
+  text-underline-offset:3px;cursor:pointer;min-height:36px}
+
+/* ---------- start ---------- */
+.start{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:20px;padding-block:8px 20px}
+.intro h2{font:700 clamp(26px,7.4vw,36px)/1.05 var(--display);letter-spacing:-.02em;margin:0 0 10px;text-wrap:balance}
+.intro p{margin:0;color:var(--muted);max-width:52ch}
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.slot{display:flex;flex-direction:column;gap:6px;min-width:0}
+.drop{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:4/5;max-width:100%;
+  border:2px dashed var(--line);border-radius:14px;background:var(--surface);cursor:pointer;overflow:hidden}
+.slot[data-state="ready"] .drop,.slot[data-state="needs"] .drop,.slot[data-state="busy"] .drop{border-style:solid}
+.slot[data-i="0"] .drop{border-color:var(--a)}
+.slot[data-i="1"] .drop{border-color:var(--b)}
+.drop.over{outline:3px solid var(--ink);outline-offset:2px}
+.drop:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+.thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tag{position:absolute;top:8px;left:8px;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  font:700 19px/1 var(--display);color:var(--on-accent)}
+.tagA{background:var(--a)} .tagB{background:var(--b)}
+.plus{font-weight:600;color:var(--muted);text-align:center;padding:0 10px}
+.slot:not([data-state="empty"]) .plus{position:absolute;right:8px;bottom:8px;padding:5px 10px;border-radius:8px;
+  background:var(--surface);color:var(--ink);font-size:13px}
+.slotfoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 10px;min-height:36px}
+.status{color:var(--muted);font-size:14px;min-width:0}
+.startActions{display:flex;flex-wrap:wrap;gap:10px}
+.startActions .btn{flex:1 1 150px}
+.fine{margin:0;color:var(--muted);font-size:13px}
+
+/* ---------- compare ---------- */
+.compare{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-block:0 12px}
+.stagewrap{flex:1;min-height:0;container-type:size;display:grid;place-items:center}
+.stage{position:relative;width:100%;aspect-ratio:4/5;max-width:100%;overflow:hidden;border-radius:12px;
+  background:var(--stage);border:3px solid var(--a);touch-action:none;cursor:pointer;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+@supports (width:1cqw){ .stage{width:min(100cqw,80cqh);height:min(100cqh,125cqw);aspect-ratio:auto} }
+.stage[data-show="1"]{border-color:var(--b)}
+.zoom{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
+.zoom canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage[data-show="0"] #cvB{visibility:hidden}
+.badge{position:absolute;top:10px;left:10px;width:48px;height:48px;border-radius:12px;display:grid;place-items:center;
+  font:700 28px/1 var(--display);color:var(--on-accent);background:var(--a);pointer-events:none}
+.stage[data-show="1"] .badge{background:var(--b)}
+.zreset{position:absolute;top:10px;right:10px}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:var(--stage);color:var(--line);font-weight:600}
+.hint{margin:0;text-align:center;color:var(--muted);font-size:13px;min-height:19px;flex:none}
+.tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:none}
+.tool{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:56px;min-width:0;
+  padding:8px 4px;border:1px solid var(--line);border-radius:12px;background:var(--surface);
+  font-weight:600;font-size:13px;line-height:1.15;text-align:center;cursor:pointer;touch-action:manipulation}
+.tool .dot{width:22px;height:6px;border-radius:3px;background:var(--line)}
+.tool[aria-pressed="true"]{border-color:var(--ink)}
+.tool[aria-pressed="true"] .dot{background:var(--ink)}
+.tool .dot.go{width:6px;background:var(--muted)}
+
+/* ---------- eye editor ---------- */
+.editor{position:fixed;inset:0;z-index:5;background:var(--bg);display:flex;flex-direction:column;gap:10px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 16px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.edtop{display:flex;align-items:center;gap:12px;flex:none}
+.tabs{display:flex;gap:6px;flex:none}
+.tab{width:44px;height:44px;border-radius:11px;border:2px solid var(--line);background:var(--surface);
+  font:700 20px/1 var(--display);cursor:pointer}
+.tab[data-i="0"][aria-pressed="true"]{background:var(--a);border-color:var(--a);color:var(--on-accent)}
+.tab[data-i="1"][aria-pressed="true"]{background:var(--b);border-color:var(--b);color:var(--on-accent)}
+.tab:disabled{opacity:.4;cursor:default}
+.edmsg{margin:0;font-weight:600;min-width:0}
+.edwrap{position:relative;flex:1;min-height:0;border-radius:12px;overflow:hidden;background:var(--stage)}
+.edwrap canvas#edc{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+.loupe{position:absolute;top:10px;left:10px;width:132px;height:132px;border-radius:50%;
+  border:3px solid var(--surface);box-shadow:0 2px 14px rgba(0,0,0,.45);pointer-events:none}
+.loupe.right{left:auto;right:10px}
+.edbtns{display:flex;gap:8px;flex:none}
+.edbtns .btn{flex:1;min-width:0;padding-inline:8px}
+</style>
+</head>
+<body>
+
+
+<div class="app">
+  <header class="bar">
+    <h1>Doll Face Compare</h1>
+    <button class="btn small" id="btnPhotos" hidden>Change photos</button>
+  </header>
+
+  <section class="start" id="start">
+    <div class="intro">
+      <h2>Flip between two doll faces</h2>
+      <p>Photograph each face straight on. The two get lined up on the eyes and the lighting is evened out, so when you tap back and forth only the face print changes.</p>
+    </div>
+    <div class="slots">
+      <div class="slot" data-i="0" data-state="empty">
+        <label class="drop" for="file0">
+          <canvas class="thumb" id="thumb0" width="320" height="400" hidden></canvas>
+          <span class="tag tagA">A</span>
+          <span class="plus" id="plus0">Add photo</span>
+        </label>
+        <input class="vh" type="file" id="file0" accept="image/*">
+        <div class="slotfoot"><span class="status" id="status0">First doll</span><button class="link" id="mark0" hidden>Adjust eyes</button></div>
+      </div>
+      <div class="slot" data-i="1" data-state="empty">
+        <label class="drop" for="file1">
+          <canvas class="thumb" id="thumb1" width="320" height="400" hidden></canvas>
+          <span class="tag tagB">B</span>
+          <span class="plus" id="plus1">Add photo</span>
+        </label>
+        <input class="vh" type="file" id="file1" accept="image/*">
+        <div class="slotfoot"><span class="status" id="status1">Second doll</span><button class="link" id="mark1" hidden>Adjust eyes</button></div>
+      </div>
+    </div>
+    <div class="startActions">
+      <button class="btn primary" id="btnCompare" disabled>Compare</button>
+      <button class="btn" id="btnExample">Try the example pair</button>
+    </div>
+    <p class="fine">Photos stay on this device. Nothing is uploaded.</p>
+  </section>
+
+  <section class="compare" id="compare" hidden>
+    <div class="stagewrap">
+      <div class="stage" id="stage" data-show="0" tabindex="0" role="button" aria-label="Showing doll A. Tap to flip.">
+        <div class="zoom" id="zoom"><canvas id="cvA"></canvas><canvas id="cvB"></canvas></div>
+        <div class="badge" id="badge">A</div>
+        <button class="btn small zreset" id="btnZoom" hidden>Reset zoom</button>
+        <div class="busy" id="busy" hidden>Lining up the faces…</div>
+      </div>
+    </div>
+    <p class="hint" id="hint">Tap the picture to flip. Pinch to zoom.</p>
+    <div class="tools">
+      <button class="tool" id="tBlink" aria-pressed="false"><span class="dot"></span>Auto flip</button>
+      <button class="tool" id="tColour" aria-pressed="true"><span class="dot"></span>Match light</button>
+      <button class="tool" id="tFine" aria-pressed="true"><span class="dot"></span>Fine-tune</button>
+      <button class="tool" id="tEyes"><span class="dot go"></span>Adjust eyes</button>
+    </div>
+  </section>
+</div>
+
+<div class="editor" id="editor" hidden>
+  <div class="edtop">
+    <div class="tabs">
+      <button class="tab" data-i="0" id="tab0" aria-pressed="true" aria-label="Photo A">A</button>
+      <button class="tab" data-i="1" id="tab1" aria-pressed="false" aria-label="Photo B">B</button>
+    </div>
+    <p class="edmsg" id="edmsg">Tap the eye on the left.</p>
+  </div>
+  <div class="edwrap" id="edwrap">
+    <canvas id="edc"></canvas>
+    <canvas class="loupe" id="loupe" hidden></canvas>
+  </div>
+  <div class="edbtns">
+    <button class="btn" id="edCancel">Cancel</button>
+    <button class="btn" id="edReset">Start over</button>
+    <button class="btn primary" id="edDone" disabled>Done</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const FACE_LIB = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js';
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model';
+const WEIGHTS = /*__WEIGHTS__*/null;
+const EXAMPLES = /*__EXAMPLES__*/[];
+
+const $ = id => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/* Output frame: eyes always land on the same two spots. */
+const ED = 0.34;          // eye distance as a share of frame width
+const EY = 0.42;          // eye line as a share of frame height
+const MAX_SIDE = 2400;    // photos are held at most this big
+const PS = 64, PW = 176, PH = 216, PCY = 0.40;   // analysis patch: 64px per eye distance, centred a little below the eyes
+const MASK_RX = 54, MASK_RY = 62;
+
+const S = { imgs: [null, null], tok: [0, 0], err: [null, null], show: 0, colour: true, fine: true, blink: null, M: null, g: null };
+const cvs = [$('cvA'), $('cvB')];
+const ctxs = cvs.map(c => c.getContext('2d', { willReadFrequently: true }));
+const scratch = document.createElement('canvas'); scratch.width = PW; scratch.height = PH;
+const sctx = scratch.getContext('2d', { willReadFrequently: true });
+
+/* ---------- 2x3 affine helpers, canvas order [a,b,c,d,e,f] ---------- */
+const mul = (m, n) => [m[0]*n[0] + m[2]*n[1], m[1]*n[0] + m[3]*n[1], m[0]*n[2] + m[2]*n[3], m[1]*n[2] + m[3]*n[3],
+                       m[0]*n[4] + m[2]*n[5] + m[4], m[1]*n[4] + m[3]*n[5] + m[5]];
+const inv = m => { const det = m[0]*m[3] - m[1]*m[2], a = m[3]/det, b = -m[1]/det, c = -m[2]/det, d = m[0]/det;
+                   return [a, b, c, d, -(a*m[4] + c*m[5]), -(b*m[4] + d*m[5])]; };
+function sim(p1, p2, q1, q2) {   // similarity taking p1->q1, p2->q2
+  const px = p2[0]-p1[0], py = p2[1]-p1[1], qx = q2[0]-q1[0], qy = q2[1]-q1[1], pp = px*px + py*py;
+  const a = (qx*px + qy*py)/pp, b = (qy*px - qx*py)/pp;
+  return [a, b, -b, a, q1[0] - (a*p1[0] - b*p1[1]), q1[1] - (b*p1[0] + a*p1[1])];
+}
+
+/* ---------- face finder (optional: everything still works by hand without it) ---------- */
+let facePromise = null;
+function b64buf(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
+function faceReady() {
+  if (facePromise) return facePromise;
+  facePromise = (async () => {
+    try {
+      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = FACE_LIB; s.onload = res; s.onerror = () => rej(new Error('blocked')); document.head.appendChild(s); });
+      const api = window.faceapi, tf = api.tf;
+      let ok = false;
+      for (const b of ['webgl', 'cpu']) { try { ok = await tf.setBackend(b); await tf.ready(); } catch (e) { ok = false; } if (ok) break; }
+      if (!ok) return null;
+      if (WEIGHTS) {            // weights packed into the page
+        const load = (net, w) => net.loadFromWeightMap(tf.io.decodeWeights(b64buf(w.b64), w.specs));
+        await load(api.nets.tinyFaceDetector, WEIGHTS.det);
+        await load(api.nets.faceLandmark68TinyNet, WEIGHTS.lmk);
+      } else {                  // slim build: fetch them next to the library
+        await api.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await api.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+      }
+      return api;
+    } catch (e) { return null; }
+  })();
+  return facePromise;
+}
+const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+
+async function findFace(api, canvas) {
+  for (const size of [608, 416, 320]) {
+    const r = await api.detectAllFaces(canvas, new api.TinyFaceDetectorOptions({ inputSize: size, scoreThreshold: 0.4 })).withFaceLandmarks(true);
+    if (r && r.length) {
+      r.sort((p, q) => q.detection.box.width*q.detection.box.height*q.detection.score - p.detection.box.width*p.detection.box.height*p.detection.score);
+      const mean = pts => { let x = 0, y = 0; for (const p of pts) { x += p.x; y += p.y; } return [x/pts.length, y/pts.length]; };
+      const a = mean(r[0].landmarks.getLeftEye()), b = mean(r[0].landmarks.getRightEye());
+      return { eyes: a[0] < b[0] ? [a, b] : [b, a], box: r[0].detection.box };
+    }
+  }
+  return null;
+}
+function subCanvas(src, x, y, w, h, maxSide) {
+  const k = Math.min(1, maxSide / Math.max(w, h)), c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w*k)); c.height = Math.max(1, Math.round(h*k));
+  const x2 = c.getContext('2d'); x2.imageSmoothingQuality = 'high';
+  x2.drawImage(src, x, y, w, h, 0, 0, c.width, c.height);
+  return { c, k };
+}
+async function detectEyes(src) {
+  const api = await withTimeout(faceReady(), 20000);
+  if (!api) return null;
+  try {
+    // pass 1 on a small copy of the whole photo, pass 2 on a close crop for sharper eye points
+    const whole = subCanvas(src, 0, 0, src.width, src.height, 1024);
+    const f1 = await findFace(api, whole.c);
+    if (!f1) return null;
+    let eyes = f1.eyes.map(p => [p[0]/whole.k, p[1]/whole.k]);
+    const d = dist(eyes[0], eyes[1]), mx = (eyes[0][0] + eyes[1][0])/2, my = (eyes[0][1] + eyes[1][1])/2;
+    const x0 = clamp(mx - 2*d, 0, src.width), y0 = clamp(my - 2*d, 0, src.height);
+    const x1 = clamp(mx + 2*d, 0, src.width), y1 = clamp(my + 2.4*d, 0, src.height);
+    const crop = subCanvas(src, x0, y0, x1 - x0, y1 - y0, 640);
+    const f2 = await findFace(api, crop.c);
+    if (f2) {
+      const e2 = f2.eyes.map(p => [x0 + p[0]/crop.k, y0 + p[1]/crop.k]);
+      if (dist(e2[0], eyes[0]) < 0.4*d && dist(e2[1], eyes[1]) < 0.4*d) eyes = e2;
+    }
+    return eyes;
+  } catch (e) { return null; }
+}
+
+/* ---------- reading photos ---------- */
+function loadImage(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = url; }); }
+async function toCanvas(src) {
+  const isBlob = typeof src !== 'string', url = isBlob ? URL.createObjectURL(src) : src;
+  try {
+    const im = await loadImage(url);
+    const k = Math.min(1, MAX_SIDE / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(im.naturalWidth*k); c.height = Math.round(im.naturalHeight*k);
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, c.width, c.height);
+    return c;
+  } finally { if (isBlob) URL.revokeObjectURL(url); }
+}
+
+async function addPhoto(i, src) {
+  const token = ++S.tok[i];
+  S.err[i] = null; S.M = null;
+  S.imgs[i] = { busy: 'Reading the photo…' }; updateSlot(i);
+  let c;
+  try { c = await toCanvas(src); }
+  catch (e) { if (token === S.tok[i]) { S.imgs[i] = null; S.err[i] = 'That file would not open. Try a JPEG or PNG.'; updateSlot(i); } return; }
+  if (token !== S.tok[i]) return;
+  const im = S.imgs[i] = { src: c, pts: null, auto: false, busy: 'Finding the face…' };
+  drawThumb(i); updateSlot(i);
+  await nextFrame();
+  const pts = await detectEyes(c);
+  if (token !== S.tok[i]) return;
+  im.busy = null; im.pts = pts; im.auto = !!pts;
+  drawThumb(i); updateSlot(i);
+}
+const loaded = i => S.imgs[i] && S.imgs[i].src && !S.imgs[i].busy;
+const ready = i => loaded(i) && !!S.imgs[i].pts;
+function advance() {            // called whenever a photo or its eye points settle
+  if (!$('editor').hidden) return;
+  for (const i of [0, 1]) if (loaded(i) && !S.imgs[i].pts) { openEditor(i); return; }
+  if (ready(0) && ready(1)) goCompare();
+}
+
+/* ---------- start screen ---------- */
+function drawThumb(i) {
+  const im = S.imgs[i], t = $('thumb' + i), x = t.getContext('2d'), W = t.width, H = t.height;
+  if (!im || !im.src) return;
+  let cx = im.src.width/2, cy = im.src.height/2, s = Math.max(W/im.src.width, H/im.src.height);
+  if (im.pts) { const d = dist(im.pts[0], im.pts[1]); cx = (im.pts[0][0] + im.pts[1][0])/2; cy = (im.pts[0][1] + im.pts[1][1])/2 + 0.3*d; s = W/(3*d); }
+  x.setTransform(1, 0, 0, 1, 0, 0); x.fillStyle = '#24232a'; x.fillRect(0, 0, W, H);
+  x.imageSmoothingQuality = 'high';
+  x.setTransform(s, 0, 0, s, W/2 - cx*s, H/2 - cy*s); x.drawImage(im.src, 0, 0);
+}
+function updateSlot(i) {
+  const im = S.imgs[i], slot = document.querySelector('.slot[data-i="' + i + '"]');
+  const state = !im ? 'empty' : im.busy ? 'busy' : im.pts ? 'ready' : 'needs';
+  slot.dataset.state = state;
+  $('thumb' + i).hidden = !(im && im.src);
+  $('plus' + i).textContent = state === 'empty' ? 'Add photo' : 'Replace';
+  $('status' + i).textContent = S.err[i] ? S.err[i]
+    : state === 'empty' ? (i ? 'Second doll' : 'First doll')
+    : state === 'busy' ? im.busy
+    : state === 'ready' ? (im.auto ? 'Face found' : 'Eyes marked by hand')
+    : 'Face not found';
+  const mark = $('mark' + i);
+  mark.hidden = !(state === 'ready' || state === 'needs');
+  mark.textContent = state === 'needs' ? 'Mark the eyes' : 'Adjust eyes';
+  $('btnCompare').disabled = !(ready(0) && ready(1));
+}
+function setView(v) {
+  $('start').hidden = v !== 'start';
+  $('compare').hidden = v !== 'compare';
+  $('btnPhotos').hidden = v !== 'compare';
+  if (v !== 'compare') setBlink(false);
+}
+
+for (const i of [0, 1]) {
+  const input = $('file' + i), drop = input.previousElementSibling;
+  input.addEventListener('change', async () => {
+    const f = input.files && input.files[0]; input.value = '';
+    if (f) { await addPhoto(i, f); advance(); }
+  });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', async e => {
+    e.preventDefault(); drop.classList.remove('over');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) { await addPhoto(i, f); advance(); }
+  });
+  $('mark' + i).addEventListener('click', () => openEditor(i));
+}
+$('btnCompare').addEventListener('click', goCompare);
+$('btnPhotos').addEventListener('click', () => setView('start'));
+$('btnExample').hidden = EXAMPLES.length < 2;
+$('btnExample').addEventListener('click', async () => {
+  if (EXAMPLES.length < 2) return;
+  await Promise.all([addPhoto(0, EXAMPLES[0]), addPhoto(1, EXAMPLES[1])]);
+  advance();
+});
+
+/* ---------- aligning ---------- */
+function geom() {
+  const d = Math.max(dist(S.imgs[0].pts[0], S.imgs[0].pts[1]), dist(S.imgs[1].pts[0], S.imgs[1].pts[1]));
+  const W = clamp(Math.round(d / ED), 720, 1600), H = Math.round(W*1.25), ed = ED*W;
+  return { W, H, ed, q: [[W/2 - ed/2, EY*H], [W/2 + ed/2, EY*H]], C: [W/2, EY*H + PCY*ed], k: ed/PS };
+}
+function draw(i, T) {
+  const x = ctxs[i], g = S.g;
+  x.setTransform(1, 0, 0, 1, 0, 0); x.fillStyle = '#1b1a20'; x.fillRect(0, 0, g.W, g.H);
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.setTransform(T[0], T[1], T[2], T[3], T[4], T[5]); x.drawImage(S.imgs[i].src, 0, 0);
+  x.setTransform(1, 0, 0, 1, 0, 0);
+}
+function patch(i) {             // small RGBA copy of the face area of canvas i
+  const g = S.g;
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(cvs[i], g.C[0] - PW/2*g.k, g.C[1] - PH/2*g.k, PW*g.k, PH*g.k, 0, 0, PW, PH);
+  return sctx.getImageData(0, 0, PW, PH).data;
+}
+function boxBlur(src, r) {
+  const tmp = new Float32Array(PW*PH), out = new Float32Array(PW*PH), n = 2*r + 1;
+  for (let y = 0; y < PH; y++) { let acc = 0; const o = y*PW;
+    for (let x = -r; x <= r; x++) acc += src[o + clamp(x, 0, PW-1)];
+    for (let x = 0; x < PW; x++) { tmp[o+x] = acc/n; acc += src[o + Math.min(PW-1, x+r+1)] - src[o + Math.max(0, x-r)]; } }
+  for (let x = 0; x < PW; x++) { let acc = 0;
+    for (let y = -r; y <= r; y++) acc += tmp[clamp(y, 0, PH-1)*PW + x];
+    for (let y = 0; y < PH; y++) { out[y*PW+x] = acc/n; acc += tmp[Math.min(PH-1, y+r+1)*PW + x] - tmp[Math.max(0, y-r)*PW + x]; } }
+  return out;
+}
+function detail(rgba) {          // brightness with the slow lighting gradient taken out
+  const g = new Float32Array(PW*PH);
+  for (let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = 0.299*rgba[j] + 0.587*rgba[j+1] + 0.114*rgba[j+2];
+  const sm = boxBlur(g, 1), lo = boxBlur(g, 10);
+  for (let i = 0; i < g.length; i++) g[i] = sm[i] - lo[i];
+  return g;
+}
+let MASK = null;
+function mask() {
+  if (MASK) return MASK;
+  const xs = [], ys = [];
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    const u = (x - PW/2)/MASK_RX, v = (y - PH/2)/MASK_RY;
+    if (u*u + v*v <= 1) { xs.push(x); ys.push(y); }
+  }
+  return (MASK = { xs: Int16Array.from(xs), ys: Int16Array.from(ys), n: xs.length });
+}
+/* Search for the small shift / turn / resize of B that makes it sit best on A. */
+function computeRefine() {
+  const A = detail(patch(0)), B = detail(patch(1)), m = mask(), n = m.n, cx = PW/2, cy = PH/2;
+  const a = new Float32Array(n); let ma = 0;
+  for (let k = 0; k < n; k++) { a[k] = A[m.ys[k]*PW + m.xs[k]]; ma += a[k]; }
+  ma /= n; let na = 0; for (let k = 0; k < n; k++) { a[k] -= ma; na += a[k]*a[k]; }
+  na = Math.sqrt(na) || 1;
+  const score = p => {
+    const s = Math.exp(p[3]), cs = s*Math.cos(p[2]), sn = s*Math.sin(p[2]);
+    let sb = 0, sbb = 0, sab = 0;
+    for (let k = 0; k < n; k++) {
+      const x = m.xs[k] - cx, y = m.ys[k] - cy;
+      const u = clamp(cx + cs*x - sn*y + p[0], 0, PW - 1.001), v = clamp(cy + sn*x + cs*y + p[1], 0, PH - 1.001);
+      const u0 = u | 0, v0 = v | 0, fu = u - u0, fv = v - v0, o = v0*PW + u0;
+      const b = (B[o]*(1-fu) + B[o+1]*fu)*(1-fv) + (B[o+PW]*(1-fu) + B[o+PW+1]*fu)*fv;
+      sb += b; sbb += b*b; sab += a[k]*b;
+    }
+    const nb = Math.sqrt(Math.max(1e-9, sbb - sb*sb/n));
+    return sab/(na*nb);
+  };
+  const lim = [14, 14, 0.14, 0.14];
+  let p = [0, 0, 0, 0], best = score(p); const base = best;
+  for (let dy = -8; dy <= 8; dy += 4) for (let dx = -8; dx <= 8; dx += 4) { const v = score([dx, dy, 0, 0]); if (v > best) { best = v; p = [dx, dy, 0, 0]; } }
+  let step = [2, 2, 0.03, 0.03];
+  for (let it = 0; it < 80 && step[0] > 0.03; it++) {
+    let improved = false;
+    for (let k = 0; k < 4; k++) for (const sg of [1, -1]) {
+      const q = p.slice(); q[k] += sg*step[k];
+      if (Math.abs(q[k]) > lim[k]) continue;
+      const v = score(q); if (v > best + 1e-6) { best = v; p = q; improved = true; }
+    }
+    if (!improved) step = step.map(s => s/2);
+  }
+  const out = { m: null, base, best, p };
+  if (best >= 0.25) {
+    const g = S.g, s = Math.exp(p[3]), a2 = s*Math.cos(p[2]), b2 = s*Math.sin(p[2]);
+    out.m = [a2, b2, -b2, a2, g.C[0] - (a2*g.C[0] - b2*g.C[1]) + g.k*p[0], g.C[1] - (b2*g.C[0] + a2*g.C[1]) + g.k*p[1]];
+  }
+  return out;
+}
+/* Pull both photos to shared brightness, contrast and colour cast, measured on the face only. */
+function faceStats(rgba) {
+  const m = mask(), sum = [0, 0, 0], sq = [0, 0, 0]; let n = 0;
+  for (let k = 0; k < m.n; k++) {
+    const j = (m.ys[k]*PW + m.xs[k])*4, r = rgba[j], g = rgba[j+1], b = rgba[j+2];
+    if (Math.max(r, g, b) > 246 || r + g + b < 45) continue;      // skip glare and deep shadow
+    sum[0] += r; sum[1] += g; sum[2] += b; sq[0] += r*r; sq[1] += g*g; sq[2] += b*b; n++;
+  }
+  if (n < 200) return null;
+  const mean = sum.map(v => v/n);
+  return { mean, sd: sq.map((v, c) => Math.sqrt(Math.max(1, v/n - mean[c]*mean[c]))) };
+}
+function matchColours() {
+  const st = [faceStats(patch(0)), faceStats(patch(1))];
+  if (!st[0] || !st[1]) return;
+  for (const i of [0, 1]) {
+    const luts = [0, 1, 2].map(c => {
+      const tm = (st[0].mean[c] + st[1].mean[c])/2, ts = (st[0].sd[c] + st[1].sd[c])/2;
+      const gain = clamp(ts/st[i].sd[c], 0.6, 1.7), lut = new Uint8ClampedArray(256);
+      for (let v = 0; v < 256; v++) lut[v] = (v - st[i].mean[c])*gain + tm;
+      return lut;
+    });
+    const id = ctxs[i].getImageData(0, 0, S.g.W, S.g.H), d = id.data;
+    for (let j = 0; j < d.length; j += 4) { d[j] = luts[0][d[j]]; d[j+1] = luts[1][d[j+1]]; d[j+2] = luts[2][d[j+2]]; }
+    ctxs[i].putImageData(id, 0, 0);
+  }
+}
+function render() {
+  const g = S.g = geom();
+  const T = [0, 1].map(i => sim(S.imgs[i].pts[0], S.imgs[i].pts[1], g.q[0], g.q[1]));
+  cvs.forEach((c, i) => { if (c.width !== g.W || c.height !== g.H) { c.width = g.W; c.height = g.H; } draw(i, T[i]); });
+  if (S.fine) {
+    if (!S.M) S.M = computeRefine();
+    if (S.M.m) draw(1, mul(inv(S.M.m), T[1]));
+  }
+  if (S.colour) matchColours();
+  $('hint').textContent = (S.fine && S.M && !S.M.m)
+    ? 'These two differ too much to fine-tune. They are lined up on the eyes only.'
+    : 'Tap the picture to flip. Pinch to zoom.';
+}
+async function rerender() {
+  $('busy').hidden = false;
+  await nextFrame();
+  try { render(); } finally { $('busy').hidden = true; }
+}
+async function goCompare() {
+  if (!(ready(0) && ready(1))) return;
+  setView('compare'); resetZoom(); setShow(0);
+  await rerender();
+}
+
+/* ---------- flipping, zooming ---------- */
+const stage = $('stage'), zoomEl = $('zoom');
+function setShow(v) {
+  S.show = v; stage.dataset.show = v; $('badge').textContent = v ? 'B' : 'A';
+  stage.setAttribute('aria-label', 'Showing doll ' + (v ? 'B' : 'A') + '. Tap to flip.');
+}
+const flip = () => setShow(S.show ? 0 : 1);
+function setBlink(on) {
+  if (S.blink) { clearInterval(S.blink); S.blink = null; }
+  if (on) S.blink = setInterval(flip, 650);
+  $('tBlink').setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+const Z = { z: 1, x: 0, y: 0 };
+function applyZoom() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  Z.z = clamp(Z.z, 1, 8); Z.x = clamp(Z.x, w - w*Z.z, 0); Z.y = clamp(Z.y, h - h*Z.z, 0);
+  zoomEl.style.transform = 'translate(' + Z.x + 'px,' + Z.y + 'px) scale(' + Z.z + ')';
+  $('btnZoom').hidden = Z.z < 1.02;
+}
+function resetZoom() { Z.z = 1; Z.x = 0; Z.y = 0; applyZoom(); }
+function zoomAt(px, py, ratio) {
+  const z2 = clamp(Z.z*ratio, 1, 8), r = z2/Z.z;
+  Z.x = px - (px - Z.x)*r; Z.y = py - (py - Z.y)*r; Z.z = z2;
+}
+const ptrs = new Map(); let gest = null;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left - stage.clientLeft, e.clientY - r.top - stage.clientTop]; };
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
+  try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+  const p = local(e); ptrs.set(e.pointerId, p);
+  if (ptrs.size === 1) gest = { t: performance.now(), start: p, moved: false, multi: false };
+  else if (gest) gest.multi = true;
+});
+stage.addEventListener('pointermove', e => {
+  const prev = ptrs.get(e.pointerId); if (!prev || !gest) return;
+  const p = local(e);
+  if (ptrs.size === 1) {
+    if (!gest.moved && dist(p, gest.start) > 8) gest.moved = true;
+    if (gest.moved && Z.z > 1) { Z.x += p[0] - prev[0]; Z.y += p[1] - prev[1]; applyZoom(); }
+  } else if (ptrs.size === 2) {
+    let other = null; for (const [id, q] of ptrs) if (id !== e.pointerId) other = q;
+    const d0 = dist(prev, other), d1 = dist(p, other);
+    const m0 = [(prev[0] + other[0])/2, (prev[1] + other[1])/2], m1 = [(p[0] + other[0])/2, (p[1] + other[1])/2];
+    if (d0 > 0) zoomAt(m1[0], m1[1], d1/d0);
+    Z.x += m1[0] - m0[0]; Z.y += m1[1] - m0[1]; applyZoom();
+  }
+  ptrs.set(e.pointerId, p);
+});
+function endPtr(e, cancelled) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (ptrs.size === 0 && gest) {
+    if (!cancelled && !gest.moved && !gest.multi && performance.now() - gest.t < 600) flip();
+    gest = null;
+  }
+}
+stage.addEventListener('pointerup', e => endPtr(e, false));
+stage.addEventListener('pointercancel', e => endPtr(e, true));
+stage.addEventListener('wheel', e => { e.preventDefault(); const p = local(e); zoomAt(p[0], p[1], Math.exp(-e.deltaY*0.002)); applyZoom(); }, { passive: false });
+stage.addEventListener('keydown', e => { if (e.target === stage && [' ', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); flip(); } });
+$('btnZoom').addEventListener('click', resetZoom);
+window.addEventListener('resize', applyZoom);
+
+$('tBlink').addEventListener('click', () => setBlink(!S.blink));
+$('tColour').addEventListener('click', () => { S.colour = !S.colour; $('tColour').setAttribute('aria-pressed', S.colour); rerender(); });
+$('tFine').addEventListener('click', () => { S.fine = !S.fine; $('tFine').setAttribute('aria-pressed', S.fine); rerender(); });
+$('tEyes').addEventListener('click', () => openEditor(S.show));
+
+/* ---------- eye editor ---------- */
+const E = { i: 0, pts: [], view: { cx: 0, cy: 0, s: 1 }, drag: null, tap: null };
+const edc = $('edc'), edx = edc.getContext('2d'), loupe = $('loupe'), lx = loupe.getContext('2d');
+function openEditor(i) {
+  if (!loaded(i)) return;
+  setBlink(false);
+  $('editor').hidden = false;
+  loadEditor(i);
+}
+function loadEditor(i) {
+  E.i = i; E.pts = S.imgs[i].pts ? S.imgs[i].pts.map(p => p.slice()) : [];
+  E.drag = null; E.tap = null; loupe.hidden = true;
+  for (const k of [0, 1]) { $('tab' + k).setAttribute('aria-pressed', k === i ? 'true' : 'false'); $('tab' + k).disabled = !loaded(k); }
+  fitEditor(); editorUI(); drawEditor();
+}
+function fitEditor() {
+  const w = edc.clientWidth || 1, h = edc.clientHeight || 1, src = S.imgs[E.i].src;
+  if (E.pts.length === 2) {
+    const d = Math.max(8, dist(E.pts[0], E.pts[1]));
+    E.view = { cx: (E.pts[0][0] + E.pts[1][0])/2, cy: (E.pts[0][1] + E.pts[1][1])/2 + 0.25*d, s: Math.min(w/(2.8*d), h/(3.2*d)) };
+  } else {
+    E.view = { cx: src.width/2, cy: src.height/2, s: Math.min(w/src.width, h/src.height) };
+  }
+}
+function editorUI() {
+  $('edmsg').textContent = E.pts.length === 0 ? 'Tap the eye on the left.' : E.pts.length === 1 ? 'Now tap the other eye.' : 'Drag each ring onto a pupil.';
+  $('edDone').disabled = E.pts.length < 2;
+  $('edReset').disabled = E.pts.length === 0;
+}
+const toScreen = p => [edc.clientWidth/2 + (p[0] - E.view.cx)*E.view.s, edc.clientHeight/2 + (p[1] - E.view.cy)*E.view.s];
+const toSource = p => [E.view.cx + (p[0] - edc.clientWidth/2)/E.view.s, E.view.cy + (p[1] - edc.clientHeight/2)/E.view.s];
+function ring(x, p, r, active) {
+  for (const [col, lw] of [['rgba(0,0,0,.75)', 4.5], ['#fff', 2]]) {
+    x.strokeStyle = col; x.lineWidth = lw;
+    x.beginPath(); x.arc(p[0], p[1], r, 0, Math.PI*2); x.stroke();
+    x.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { x.moveTo(p[0] + dx*r*0.45, p[1] + dy*r*0.45); x.lineTo(p[0] + dx*(r + (active ? 12 : 7)), p[1] + dy*(r + (active ? 12 : 7))); }
+    x.stroke();
+  }
+}
+function drawEditor() {
+  const dpr = window.devicePixelRatio || 1, w = edc.clientWidth, h = edc.clientHeight, src = S.imgs[E.i] && S.imgs[E.i].src;
+  if (!w || !h || !src) return;
+  if (edc.width !== Math.round(w*dpr) || edc.height !== Math.round(h*dpr)) { edc.width = Math.round(w*dpr); edc.height = Math.round(h*dpr); }
+  const s = E.view.s;
+  edx.setTransform(1, 0, 0, 1, 0, 0); edx.fillStyle = '#1b1a20'; edx.fillRect(0, 0, edc.width, edc.height);
+  edx.imageSmoothingQuality = 'high';
+  edx.setTransform(dpr*s, 0, 0, dpr*s, dpr*(w/2 - E.view.cx*s), dpr*(h/2 - E.view.cy*s)); edx.drawImage(src, 0, 0);
+  edx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  E.pts.forEach((p, k) => ring(edx, toScreen(p), 15, E.drag && E.drag.k === k));
+  if (E.drag) drawLoupe(E.drag.k);
+}
+function drawLoupe(k) {
+  const dpr = window.devicePixelRatio || 1, size = 132, p = E.pts[k], mag = E.view.s*3, src = S.imgs[E.i].src;
+  if (loupe.width !== size*dpr) { loupe.width = loupe.height = size*dpr; }
+  lx.setTransform(1, 0, 0, 1, 0, 0); lx.fillStyle = '#1b1a20'; lx.fillRect(0, 0, loupe.width, loupe.height);
+  lx.setTransform(dpr*mag, 0, 0, dpr*mag, dpr*(size/2 - p[0]*mag), dpr*(size/2 - p[1]*mag)); lx.drawImage(src, 0, 0);
+  lx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const [col, lw] of [['rgba(0,0,0,.7)', 3], ['#fff', 1.2]]) {
+    lx.strokeStyle = col; lx.lineWidth = lw; lx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { lx.moveTo(size/2 + dx*7, size/2 + dy*7); lx.lineTo(size/2 + dx*size/2, size/2 + dy*size/2); }
+    lx.stroke();
+  }
+  loupe.classList.toggle('right', toScreen(p)[0] < edc.clientWidth/2);
+}
+const edLocal = e => { const r = edc.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+edc.addEventListener('pointerdown', e => {
+  if (E.drag || E.tap) return;
+  try { edc.setPointerCapture(e.pointerId); } catch (err) {}
+  const p = edLocal(e);
+  if (E.pts.length < 2) { E.tap = { id: e.pointerId, start: p, moved: false }; return; }
+  const k = dist(toScreen(E.pts[0]), p) <= dist(toScreen(E.pts[1]), p) ? 0 : 1;
+  E.drag = { id: e.pointerId, k, last: p }; loupe.hidden = false; drawEditor();
+});
+edc.addEventListener('pointermove', e => {
+  const p = edLocal(e), src = S.imgs[E.i].src;
+  if (E.drag && e.pointerId === E.drag.id) {
+    const q = E.pts[E.drag.k];
+    q[0] = clamp(q[0] + (p[0] - E.drag.last[0])/E.view.s, 0, src.width);
+    q[1] = clamp(q[1] + (p[1] - E.drag.last[1])/E.view.s, 0, src.height);
+    E.drag.last = p; drawEditor();
+  } else if (E.tap && e.pointerId === E.tap.id && dist(p, E.tap.start) > 10) E.tap.moved = true;
+});
+function edEnd(e, cancelled) {
+  if (E.drag && e.pointerId === E.drag.id) { E.drag = null; loupe.hidden = true; drawEditor(); }
+  else if (E.tap && e.pointerId === E.tap.id) {
+    const ok = !cancelled && !E.tap.moved; E.tap = null;
+    if (ok) {
+      const src = S.imgs[E.i].src, q = toSource(edLocal(e));
+      E.pts.push([clamp(q[0], 0, src.width), clamp(q[1], 0, src.height)]);
+      if (E.pts.length === 2) {
+        if (dist(E.pts[0], E.pts[1]) < 6) E.pts.pop();
+        else { E.pts.sort((a, b) => a[0] - b[0]); fitEditor(); }
+      }
+      editorUI(); drawEditor();
+    }
+  }
+}
+edc.addEventListener('pointerup', e => edEnd(e, false));
+edc.addEventListener('pointercancel', e => edEnd(e, true));
+function commitEditor() {
+  if (E.pts.length !== 2) return false;
+  const im = S.imgs[E.i], pts = E.pts.map(p => p.slice()).sort((a, b) => a[0] - b[0]);
+  if (dist(pts[0], pts[1]) < 6) return false;
+  const changed = !im.pts || dist(im.pts[0], pts[0]) + dist(im.pts[1], pts[1]) > 0.01;
+  if (changed) { im.pts = pts; im.auto = false; S.M = null; drawThumb(E.i); updateSlot(E.i); }
+  return true;
+}
+for (const k of [0, 1]) $('tab' + k).addEventListener('click', () => { if (k !== E.i && loaded(k)) { commitEditor(); loadEditor(k); } });
+$('edReset').addEventListener('click', () => { E.pts = []; fitEditor(); editorUI(); drawEditor(); });
+$('edCancel').addEventListener('click', () => { $('editor').hidden = true; if (!$('compare').hidden) rerender(); });
+$('edDone').addEventListener('click', () => {
+  if (!commitEditor()) return;
+  $('editor').hidden = true;
+  for (const i of [0, 1]) if (loaded(i) && !S.imgs[i].pts) { openEditor(i); return; }
+  if (ready(0) && ready(1)) goCompare();
+});
+if (window.ResizeObserver) new ResizeObserver(() => { if (!$('editor').hidden && S.imgs[E.i]) { if (!E.drag) fitEditor(); drawEditor(); } }).observe($('edwrap'));
+
+/* warm the face finder up while she is still picking photos */
+setTimeout(faceReady, 300);
+})();
+</script>
+
+</body>
+</html>
