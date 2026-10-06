@@ -57,12 +57,13 @@ button{font:inherit;color:inherit}
 .slot{display:flex;flex-direction:column;gap:6px;min-width:0}
 .drop{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:4/5;max-width:100%;
   border:2px dashed var(--line);border-radius:14px;background:var(--surface);cursor:pointer;overflow:hidden}
-.slot[data-state="ready"] .drop,.slot[data-state="needs"] .drop,.slot[data-state="busy"] .drop{border-style:solid}
+.slot:not([data-state="empty"]) .drop{border-style:solid}
 .slot[data-i="0"] .drop{border-color:var(--a)}
 .slot[data-i="1"] .drop{border-color:var(--b)}
 .drop.over{outline:3px solid var(--ink);outline-offset:2px}
 .drop:focus-within{outline:2px solid var(--ink);outline-offset:2px}
 .thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pick{position:absolute;inset:0;z-index:2;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;font-size:0}
 .tag{position:absolute;top:8px;left:8px;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
   font:700 19px/1 var(--display);color:var(--on-accent)}
 .tagA{background:var(--a)} .tagB{background:var(--b)}
@@ -137,21 +138,21 @@ button{font:inherit;color:inherit}
     </div>
     <div class="slots">
       <div class="slot" data-i="0" data-state="empty">
-        <label class="drop" for="file0">
+        <div class="drop">
           <canvas class="thumb" id="thumb0" width="320" height="400" hidden></canvas>
           <span class="tag tagA">A</span>
           <span class="plus" id="plus0">Add photo</span>
-        </label>
-        <input class="vh" type="file" id="file0" accept="image/*">
+          <input class="pick" type="file" id="file0" accept="image/*" aria-label="Photo of the first doll">
+        </div>
         <div class="slotfoot"><span class="status" id="status0">First doll</span><button class="link" id="mark0" hidden>Adjust eyes</button></div>
       </div>
       <div class="slot" data-i="1" data-state="empty">
-        <label class="drop" for="file1">
+        <div class="drop">
           <canvas class="thumb" id="thumb1" width="320" height="400" hidden></canvas>
           <span class="tag tagB">B</span>
           <span class="plus" id="plus1">Add photo</span>
-        </label>
-        <input class="vh" type="file" id="file1" accept="image/*">
+          <input class="pick" type="file" id="file1" accept="image/*" aria-label="Photo of the second doll">
+        </div>
         <div class="slotfoot"><span class="status" id="status1">Second doll</span><button class="link" id="mark1" hidden>Adjust eyes</button></div>
       </div>
     </div>
@@ -327,20 +328,29 @@ async function addPhoto(i, src) {
   try { c = await toCanvas(src); }
   catch (e) { if (token === S.tok[i]) { S.imgs[i] = null; S.err[i] = 'That file would not open. Try a JPEG or PNG.'; updateSlot(i); } return; }
   if (token !== S.tok[i]) return;
-  const im = S.imgs[i] = { src: c, pts: null, auto: false, busy: 'Finding the face…' };
+  S.imgs[i] = { src: c, pts: null, auto: false, tried: false, busy: null };
   drawThumb(i); updateSlot(i);
+}
+async function findEyes(i) {
+  const im = S.imgs[i], token = S.tok[i];
+  if (!im || !im.src || im.pts || im.tried || im.busy) return;
+  im.busy = 'Finding the face…'; updateSlot(i);
   await nextFrame();
-  const pts = await detectEyes(c);
+  const pts = await detectEyes(im.src);
   if (token !== S.tok[i]) return;
-  im.busy = null; im.pts = pts; im.auto = !!pts;
+  im.busy = null; im.tried = true; im.pts = pts; im.auto = !!pts;
   drawThumb(i); updateSlot(i);
 }
 const loaded = i => S.imgs[i] && S.imgs[i].src && !S.imgs[i].busy;
 const ready = i => loaded(i) && !!S.imgs[i].pts;
-function advance() {            // called whenever a photo or its eye points settle
-  if (!$('editor').hidden) return;
-  for (const i of [0, 1]) if (loaded(i) && !S.imgs[i].pts) { openEditor(i); return; }
-  if (ready(0) && ready(1)) goCompare();
+/* Called whenever a photo or its eye points settle. Nothing heavy runs, and nothing pops up,
+   until both photos are in, so the page stays free for the tap that adds the second one. */
+async function advance() {
+  if (!$('editor').hidden || !(loaded(0) && loaded(1))) return;
+  await findEyes(0); await findEyes(1);
+  if (!$('editor').hidden || !(loaded(0) && loaded(1))) return;
+  for (const i of [0, 1]) if (!S.imgs[i].pts) { openEditor(i); return; }
+  goCompare();
 }
 
 /* ---------- start screen ---------- */
@@ -355,7 +365,7 @@ function drawThumb(i) {
 }
 function updateSlot(i) {
   const im = S.imgs[i], slot = document.querySelector('.slot[data-i="' + i + '"]');
-  const state = !im ? 'empty' : im.busy ? 'busy' : im.pts ? 'ready' : 'needs';
+  const state = !im ? 'empty' : im.busy ? 'busy' : im.pts ? 'ready' : im.tried ? 'needs' : 'added';
   slot.dataset.state = state;
   $('thumb' + i).hidden = !(im && im.src);
   $('plus' + i).textContent = state === 'empty' ? 'Add photo' : 'Replace';
@@ -363,11 +373,12 @@ function updateSlot(i) {
     : state === 'empty' ? (i ? 'Second doll' : 'First doll')
     : state === 'busy' ? im.busy
     : state === 'ready' ? (im.auto ? 'Face found' : 'Eyes marked by hand')
+    : state === 'added' ? 'Photo added'
     : 'Face not found';
   const mark = $('mark' + i);
   mark.hidden = !(state === 'ready' || state === 'needs');
   mark.textContent = state === 'needs' ? 'Mark the eyes' : 'Adjust eyes';
-  $('btnCompare').disabled = !(ready(0) && ready(1));
+  $('btnCompare').disabled = !(loaded(0) && loaded(1));
 }
 function setView(v) {
   $('start').hidden = v !== 'start';
@@ -377,7 +388,7 @@ function setView(v) {
 }
 
 for (const i of [0, 1]) {
-  const input = $('file' + i), drop = input.previousElementSibling;
+  const input = $('file' + i), drop = input.parentElement;
   input.addEventListener('change', async () => {
     const f = input.files && input.files[0]; input.value = '';
     if (f) { await addPhoto(i, f); advance(); }
@@ -391,7 +402,7 @@ for (const i of [0, 1]) {
   });
   $('mark' + i).addEventListener('click', () => openEditor(i));
 }
-$('btnCompare').addEventListener('click', goCompare);
+$('btnCompare').addEventListener('click', advance);
 $('btnPhotos').addEventListener('click', () => setView('start'));
 $('btnExample').hidden = EXAMPLES.length < 2;
 $('btnExample').addEventListener('click', async () => {
@@ -719,8 +730,7 @@ $('edCancel').addEventListener('click', () => { $('editor').hidden = true; if (!
 $('edDone').addEventListener('click', () => {
   if (!commitEditor()) return;
   $('editor').hidden = true;
-  for (const i of [0, 1]) if (loaded(i) && !S.imgs[i].pts) { openEditor(i); return; }
-  if (ready(0) && ready(1)) goCompare();
+  advance();
 });
 if (window.ResizeObserver) new ResizeObserver(() => { if (!$('editor').hidden && S.imgs[E.i]) { if (!E.drag) fitEditor(); drawEditor(); } }).observe($('edwrap'));
 
